@@ -2,13 +2,14 @@ package api
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
-
-	"github.com/davecgh/go-spew/spew"
+	"sync"
 )
 
 type Listener struct{}
@@ -97,6 +98,34 @@ func (l *Listener) Start() {
 		return rs
 	}
 
+	fanIn := func(done <-chan interface{}, channels ...<-chan Result) <-chan Result {
+		var wg sync.WaitGroup
+		multiplexedSteam := make(chan Result)
+
+		multiplex := func(c <-chan Result) {
+			defer wg.Done()
+			for r := range c {
+				select {
+				case <-done:
+					return
+				case multiplexedSteam <- r:
+				}
+			}
+		}
+
+		wg.Add(len(channels))
+		for _, c := range channels {
+			go multiplex(c)
+		}
+
+		go func() {
+			wg.Wait()
+			close(multiplexedSteam)
+		}()
+
+		return multiplexedSteam
+	}
+
 	go func() {
 		for stdin.Scan() {
 			select {
@@ -118,13 +147,31 @@ func (l *Listener) Start() {
 					log.Fatalf("[ hlwm ] api: could not read status: %v\n", err)
 				}
 
-				ts := strings.Split(strings.TrimSpace(stdin.Text()), "\t")
+				rt := strings.Split(strings.TrimSpace(stdin.Text()), "\t")
+				ts := generator(done, rt)
 
-				fmt.Println("hello there")
-
-				for r := range processor(done, generator(done, ts)) {
-					spew.Dump(r)
+				numProcessors := runtime.NumCPU()
+				processors := make([]<-chan Result, numProcessors)
+				for i := 0; i < numProcessors; i++ {
+					processors[i] = processor(done, ts)
 				}
+
+				sM := make(StatusMap)
+				for r := range fanIn(done, processors...) {
+					if r.Error != nil {
+						log.Fatalf("[ hlwm ] api: could not get tag state: %v\n", r.Error)
+						continue
+					}
+
+					sM[r.Tag] = r.View
+				}
+
+				b, err := json.Marshal(sM)
+				if err != nil {
+					log.Fatalf("[ hlwm ] api: could not marshal status map: %v\n", err)
+				}
+
+				fmt.Println(string(b))
 			}
 		}
 	}()
