@@ -2,20 +2,19 @@ package api
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/davecgh/go-spew/spew"
 )
 
-type Listener struct {
-	quit chan bool
-}
+type Listener struct{}
 
-func NewListener(quit chan bool) *Listener {
-	return &Listener{quit}
+func NewListener() *Listener {
+	return &Listener{}
 }
 
 func (l *Listener) Start() {
@@ -26,19 +25,107 @@ func (l *Listener) Start() {
 	}
 
 	stdin := bufio.NewScanner(stdout)
+
+	done := make(chan interface{})
+	defer close(done)
+
+	generator := func(done <-chan interface{}, tags []string) <-chan string {
+		ts := make(chan string)
+		go func() {
+			defer close(ts)
+			for i := range tags {
+				select {
+				case <-done:
+					return
+				case ts <- tags[i]:
+				}
+			}
+		}()
+
+		return ts
+	}
+
+	type Result struct {
+		Status
+		Error error
+	}
+
+	process := func(s string) Result {
+		var v State
+		switch string(s[0]) {
+		case "#":
+			v = Focused
+		case ":":
+			v = Occupied
+		case "!":
+			v = Urgent
+		case "-":
+			v = Viewed
+		default:
+			v = Empty
+		}
+
+		t, err := strconv.Atoi(string(s[1]))
+		if err != nil {
+			return Result{
+				Error: err,
+			}
+		}
+
+		return Result{
+			Status: Status{
+				Tag:  t,
+				View: v,
+			},
+		}
+	}
+
+	processor := func(done <-chan interface{}, ts <-chan string) <-chan Result {
+		rs := make(chan Result)
+		go func() {
+			defer close(rs)
+			for t := range ts {
+				r := process(t)
+				select {
+				case <-done:
+					return
+				case rs <- r:
+				}
+			}
+		}()
+
+		return rs
+	}
+
 	go func() {
 		for stdin.Scan() {
-			s, err := getStatus()
-			if err != nil {
-				log.Fatalf("[ hlwm ] api: could not get status: %v\n", err)
-			}
+			select {
+			case <-done:
+				return
+			default:
+				cmd := exec.Command("herbstclient", "tag_status")
+				stdout, err := cmd.StdoutPipe()
+				if err != nil {
+					log.Fatalf("[ hlwm ] api: could not create stdout pipe: %v\n", err)
+				}
 
-			b, err := json.Marshal(s)
-			if err != nil {
-				log.Fatalf("[ hlwm ] api: could not marshal JSON: %v\n", err)
-			}
+				if err = cmd.Start(); err != nil {
+					log.Fatalf("[ hlwm ] api: could not execute command: %v\n", err)
+				}
 
-			fmt.Println(string(b))
+				stdin := bufio.NewScanner(stdout)
+				if !stdin.Scan() {
+					log.Fatalf("[ hlwm ] api: could not read status: %v\n", err)
+				}
+
+				ts := strings.Split(strings.TrimSpace(stdin.Text()), "\t")
+
+				fmt.Println("hello there")
+
+				for r := range processor(done, generator(done, ts)) {
+					spew.Dump(r)
+				}
+			}
 		}
 	}()
 
@@ -49,53 +136,4 @@ func (l *Listener) Start() {
 	if err = cmd.Wait(); err != nil {
 		log.Fatalf("[ hlwm ] api: could not wait: %v\n", err)
 	}
-}
-
-func getStatus() (Status, error) {
-	cmd := exec.Command("herbstclient", "tag_status")
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return Status{}, err
-	}
-
-	if err = cmd.Start(); err != nil {
-		return Status{}, err
-	}
-
-	stdin := bufio.NewScanner(stdout)
-	if !stdin.Scan() {
-		return Status{}, fmt.Errorf("could not read status")
-	}
-
-	ts := strings.Split(strings.TrimSpace(stdin.Text()), "\t")
-
-	tags := make([]int, len(ts))
-	views := make([]State, len(ts))
-	for i := range ts {
-		arr := strings.Split(ts[i], "")
-		switch arr[0] {
-		case "#":
-			views[i] = Focused
-		case ":":
-			views[i] = Occupied
-		case "!":
-			views[i] = Urgent
-		case "-":
-			views[i] = Viewed
-		default:
-			views[i] = Empty
-		}
-
-		tag, err := strconv.Atoi(arr[1])
-		if err != nil {
-			return Status{}, err
-		}
-
-		tags[i] = tag
-	}
-
-	return Status{
-		Tags:  tags,
-		Views: views,
-	}, nil
 }

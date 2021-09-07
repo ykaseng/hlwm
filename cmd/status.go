@@ -26,10 +26,7 @@ var statusCmd = &cobra.Command{
 	Short: "Returns a JSON of the current Herbstluft WM",
 	Long:  `Returns a JSON of the current Herbstluft WM`,
 	Run: func(cmd *cobra.Command, args []string) {
-		quit := make(chan bool)
-		defer close(quit)
-
-		listener := api.NewListener(quit)
+		listener := api.NewListener()
 		listener.Start()
 	},
 }
