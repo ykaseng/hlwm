@@ -2,6 +2,7 @@ package api
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -30,13 +31,16 @@ func (l *Listener) Start() {
 	done := make(chan interface{})
 	defer close(done)
 
-	generator := func(done <-chan interface{}, tags []string) <-chan string {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	generator := func(ctx context.Context, tags []string) <-chan string {
 		ts := make(chan string)
 		go func() {
 			defer close(ts)
 			for i := range tags {
 				select {
-				case <-done:
+				case <-ctx.Done():
 					return
 				case ts <- tags[i]:
 				}
@@ -81,14 +85,14 @@ func (l *Listener) Start() {
 		}
 	}
 
-	processor := func(done <-chan interface{}, ts <-chan string) <-chan Result {
+	processor := func(ctx context.Context, ts <-chan string) <-chan Result {
 		rs := make(chan Result)
 		go func() {
 			defer close(rs)
 			for t := range ts {
 				r := process(t)
 				select {
-				case <-done:
+				case <-ctx.Done():
 					return
 				case rs <- r:
 				}
@@ -98,7 +102,7 @@ func (l *Listener) Start() {
 		return rs
 	}
 
-	fanIn := func(done <-chan interface{}, channels ...<-chan Result) <-chan Result {
+	fanIn := func(ctx context.Context, channels ...<-chan Result) <-chan Result {
 		var wg sync.WaitGroup
 		multiplexedSteam := make(chan Result)
 
@@ -106,7 +110,7 @@ func (l *Listener) Start() {
 			defer wg.Done()
 			for r := range c {
 				select {
-				case <-done:
+				case <-ctx.Done():
 					return
 				case multiplexedSteam <- r:
 				}
@@ -129,7 +133,7 @@ func (l *Listener) Start() {
 	go func() {
 		for stdin.Scan() {
 			select {
-			case <-done:
+			case <-ctx.Done():
 				return
 			default:
 				cmd := exec.Command("herbstclient", "tag_status")
@@ -148,16 +152,16 @@ func (l *Listener) Start() {
 				}
 
 				rt := strings.Split(strings.TrimSpace(stdin.Text()), "\t")
-				ts := generator(done, rt)
+				ts := generator(ctx, rt)
 
 				numProcessors := runtime.NumCPU()
 				processors := make([]<-chan Result, numProcessors)
 				for i := 0; i < numProcessors; i++ {
-					processors[i] = processor(done, ts)
+					processors[i] = processor(ctx, ts)
 				}
 
 				sM := make(StatusMap)
-				for r := range fanIn(done, processors...) {
+				for r := range fanIn(ctx, processors...) {
 					if r.Error != nil {
 						log.Fatalf("[ hlwm ] api: could not get tag state: %v\n", r.Error)
 						continue
