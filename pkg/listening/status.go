@@ -1,4 +1,4 @@
-package api
+package listening
 
 import "bytes"
 
@@ -32,6 +32,8 @@ func (s State) MarshalJSON() ([]byte, error) {
 }
 
 type Status struct {
-	Tags  []int   `json:"tags"`
-	Views []State `json:"views"`
+	Tag  int   `json:"tag"`
+	View State `json:"view"`
 }
+
+type StatusMap map[int]State
