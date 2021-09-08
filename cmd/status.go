@@ -17,7 +17,8 @@ package cmd
 
 import (
 	"github.com/spf13/cobra"
-	"github.com/ykaseng/hlwm/api"
+	"github.com/ykaseng/hlwm/pkg/listening"
+	"github.com/ykaseng/hlwm/pkg/logging"
 )
 
 // statusCmd represents the status command
@@ -26,7 +27,9 @@ var statusCmd = &cobra.Command{
 	Short: "Returns a JSON of the current Herbstluft WM",
 	Long:  `Returns a JSON of the current Herbstluft WM`,
 	Run: func(cmd *cobra.Command, args []string) {
-		listener := api.NewListener()
+		logging.NewLogger()
+
+		listener := listening.NewService()
 		listener.Start()
 	},
 }
