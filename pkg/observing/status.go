@@ -1,4 +1,4 @@
-package listening
+package observing
 
 import "bytes"
 

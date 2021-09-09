@@ -1,4 +1,4 @@
-package listening
+package observing
 
 type result struct {
 	Status
