@@ -1,10 +1,9 @@
-package listening
+package observing
 
 import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"fmt"
 	"os/exec"
 	"runtime"
 	"strconv"
@@ -15,7 +14,8 @@ import (
 )
 
 type Service interface {
-	Start()
+	TagChangeEvent(context.Context) <-chan Event
+	TagStatus() string
 }
 
 type service struct{}
@@ -24,35 +24,13 @@ func NewService() *service {
 	return &service{}
 }
 
-type event int
+type Event int
 
 const (
-	TagChange event = iota
+	TagChange Event = iota
 )
 
-func (s *service) Start() {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	ts := generator(ctx, listen(ctx))
-
-	numProcessors := runtime.NumCPU()
-	processors := make([]<-chan result, numProcessors)
-	for i := 0; i < numProcessors; i++ {
-		processors[i] = processor(ctx, ts)
-	}
-
-	for sM := range batch(ctx, fanIn(ctx, processors...)) {
-		b, err := json.Marshal(sM)
-		if err != nil {
-			logging.Logger.Errorf("api: could not marshal status map: %v\n", err)
-		}
-
-		fmt.Println(string(b))
-	}
-}
-
-func listen(ctx context.Context) <-chan event {
+func (s *service) TagChangeEvent(ctx context.Context) <-chan Event {
 	cmd := exec.Command("herbstclient", "--idle", "tag_*")
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -60,7 +38,7 @@ func listen(ctx context.Context) <-chan event {
 	}
 
 	stdin := bufio.NewScanner(stdout)
-	es := make(chan event)
+	es := make(chan Event)
 	go func() {
 		defer close(es)
 		for stdin.Scan() {
@@ -81,34 +59,56 @@ func listen(ctx context.Context) <-chan event {
 	return es
 }
 
-func generator(ctx context.Context, es <-chan event) <-chan string {
+func (s *service) TagStatus() string {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ts := generator(ctx)
+
+	numProcessors := runtime.NumCPU()
+	processors := make([]<-chan result, numProcessors)
+	for i := 0; i < numProcessors; i++ {
+		processors[i] = processor(ctx, ts)
+	}
+
+	sM := make(StatusMap)
+	for r := range take(ctx, fanIn(ctx, processors...), 9) {
+		sM[r.Tag] = r.View
+	}
+
+	b, err := json.Marshal(sM)
+	if err != nil {
+		logging.Logger.Errorf("api: could not marshal status map: %v\n", err)
+	}
+
+	return string(b)
+}
+
+func generator(ctx context.Context) <-chan string {
+	cmd := exec.Command("herbstclient", "tag_status")
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		logging.Logger.Errorf("api: could not create stdout pipe: %v\n", err)
+	}
+
+	if err = cmd.Start(); err != nil {
+		logging.Logger.Errorf("api: could not execute command: %v\n", err)
+	}
+
+	stdin := bufio.NewScanner(stdout)
+	if !stdin.Scan() {
+		logging.Logger.Errorf("api: could not read status: %v\n", err)
+	}
+
+	tags := strings.Split(strings.TrimSpace(stdin.Text()), "\t")
 	ts := make(chan string)
 	go func() {
 		defer close(ts)
-		for {
+		for i := range tags {
 			select {
 			case <-ctx.Done():
 				return
-			case <-es:
-				cmd := exec.Command("herbstclient", "tag_status")
-				stdout, err := cmd.StdoutPipe()
-				if err != nil {
-					logging.Logger.Errorf("api: could not create stdout pipe: %v\n", err)
-				}
-
-				if err = cmd.Start(); err != nil {
-					logging.Logger.Errorf("api: could not execute command: %v\n", err)
-				}
-
-				stdin := bufio.NewScanner(stdout)
-				if !stdin.Scan() {
-					logging.Logger.Errorf("api: could not read status: %v\n", err)
-				}
-
-				tags := strings.Split(strings.TrimSpace(stdin.Text()), "\t")
-				for i := range tags {
-					ts <- tags[i]
-				}
+			case ts <- tags[i]:
 			}
 		}
 	}()
@@ -211,4 +211,20 @@ func batch(ctx context.Context, rs <-chan result) <-chan StatusMap {
 	}()
 
 	return smS
+}
+
+func take(ctx context.Context, rs <-chan result, num int) <-chan result {
+	ts := make(chan result)
+	go func() {
+		defer close(ts)
+		for i := 0; i < num; i++ {
+			select {
+			case <-ctx.Done():
+				return
+			case ts <- <-rs:
+			}
+		}
+	}()
+
+	return ts
 }
