@@ -34,7 +34,7 @@ func (s *service) TagChangeEvent(ctx context.Context) <-chan Event {
 	cmd := exec.Command("herbstclient", "--idle", "tag_*")
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		logging.Logger.Errorf("api: could not create stdout pipe: %v\n", err)
+		logging.Logger.Errorf("observing: could not create stdout pipe: %v\n", err)
 	}
 
 	stdin := bufio.NewScanner(stdout)
@@ -51,7 +51,7 @@ func (s *service) TagChangeEvent(ctx context.Context) <-chan Event {
 	}()
 
 	if err = cmd.Start(); err != nil {
-		logging.Logger.Errorf("api: could not execute command: %v\n", err)
+		logging.Logger.Errorf("observing: could not execute command: %v\n", err)
 	}
 
 	go cmd.Wait()
@@ -78,7 +78,7 @@ func (s *service) TagStatus() string {
 
 	b, err := json.Marshal(sM)
 	if err != nil {
-		logging.Logger.Errorf("api: could not marshal status map: %v\n", err)
+		logging.Logger.Errorf("observing: could not marshal status map: %v\n", err)
 	}
 
 	return string(b)
@@ -88,16 +88,16 @@ func generator(ctx context.Context) <-chan string {
 	cmd := exec.Command("herbstclient", "tag_status")
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		logging.Logger.Errorf("api: could not create stdout pipe: %v\n", err)
+		logging.Logger.Errorf("observing: could not create stdout pipe: %v\n", err)
 	}
 
 	if err = cmd.Start(); err != nil {
-		logging.Logger.Errorf("api: could not execute command: %v\n", err)
+		logging.Logger.Errorf("observing: could not execute command: %v\n", err)
 	}
 
 	stdin := bufio.NewScanner(stdout)
 	if !stdin.Scan() {
-		logging.Logger.Errorf("api: could not read status: %v\n", err)
+		logging.Logger.Errorf("observing: could not read status: %v\n", err)
 	}
 
 	tags := strings.Split(strings.TrimSpace(stdin.Text()), "\t")
