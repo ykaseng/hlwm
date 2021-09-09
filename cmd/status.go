@@ -16,9 +16,14 @@ limitations under the License.
 package cmd
 
 import (
+	"context"
+	"fmt"
+	"time"
+
 	"github.com/spf13/cobra"
-	"github.com/ykaseng/hlwm/pkg/listening"
+	"github.com/ykaseng/hlwm/pkg/exhibiting"
 	"github.com/ykaseng/hlwm/pkg/logging"
+	"github.com/ykaseng/hlwm/pkg/observing"
 )
 
 // statusCmd represents the status command
@@ -29,8 +34,16 @@ var statusCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		logging.NewLogger()
 
-		listener := listening.NewService()
-		listener.Start()
+		exhibitor := exhibiting.NewService()
+		observer := observing.NewService()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		for range observer.TagChangeEvent(ctx) {
+			fmt.Println(observer.TagStatus())
+			exhibitor.FlashWidget("barcenter", time.Second)
+		}
 	},
 }
 
