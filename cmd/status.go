@@ -30,8 +30,10 @@ import (
 // statusCmd represents the status command
 var statusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Returns a JSON of the current Herbstluft WM",
-	Long:  `Returns a JSON of the current Herbstluft WM`,
+	Short: "Status observes hlwm tag state changes",
+	Long: `Status observes hlwm tag state changes, outputs changes to stdout 
+	and signals eww to exhibit changes. Errors are piped through to notify-send
+	using logrus.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		logging.NewLogger()
 
@@ -41,9 +43,17 @@ var statusCmd = &cobra.Command{
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		for range observer.TagChangeEvent(ctx) {
-			fmt.Println(observer.TagStatus())
-			exhibitor.FlashWidget("barcenter", time.Second)
+		tcs := observer.TagChangeEvent(ctx)
+		fs := exhibitor.FlashWidget(ctx, "statusbar", time.Second)
+		for {
+			defer close(fs)
+			select {
+			case <-ctx.Done():
+				return
+			case <-tcs:
+				fmt.Println(observer.TagStatus())
+				fs <- struct{}{}
+			}
 		}
 	},
 }
