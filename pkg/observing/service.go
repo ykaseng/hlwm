@@ -191,28 +191,6 @@ func fanIn(ctx context.Context, channels ...<-chan result) <-chan result {
 	return multiplexedSteam
 }
 
-func batch(ctx context.Context, rs <-chan result) <-chan StatusMap {
-	smS := make(chan StatusMap)
-	go func() {
-		defer close(smS)
-		sM := make(StatusMap)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case r := <-rs:
-				sM[r.Tag] = r.View
-				if len(sM) == 9 {
-					smS <- sM
-					sM = make(StatusMap)
-				}
-			}
-		}
-	}()
-
-	return smS
-}
-
 func take(ctx context.Context, rs <-chan result, num int) <-chan result {
 	ts := make(chan result)
 	go func() {
