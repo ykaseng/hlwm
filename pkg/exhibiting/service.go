@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/ykaseng/hlwm/pkg/logging"
@@ -13,6 +14,7 @@ type Service interface {
 	ShowWidget(string)
 	HideWidget(string)
 	FlashWidget(context.Context, string, time.Duration) chan<- interface{}
+	SetLayout(string)
 }
 
 type service struct{}
@@ -49,6 +51,13 @@ func (s *service) FlashWidget(ctx context.Context, w string, d time.Duration) ch
 	}()
 
 	return fs
+}
+
+func (s *service) SetLayout(ls string) {
+	cmd := exec.Command("herbstclient", strings.Fields(fmt.Sprintf("set_monitors %s", layout(ls)))...)
+	if err := cmd.Run(); err != nil {
+		logging.Logger.Fatalf("exhibiting: could not set layout: %v\n", err)
+	}
 }
 
 func showWidget(ctx context.Context, w string) error {
