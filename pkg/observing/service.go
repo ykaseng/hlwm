@@ -24,12 +24,6 @@ func NewService() *service {
 	return &service{}
 }
 
-type Event int
-
-const (
-	TagChange Event = iota
-)
-
 func (s *service) TagChangeEvent(ctx context.Context) <-chan Event {
 	cmd := exec.Command("herbstclient", "--idle", "tag_*")
 	stdout, err := cmd.StdoutPipe()
