@@ -16,6 +16,7 @@ import (
 type Service interface {
 	TagChangeEvent(context.Context) <-chan Event
 	TagStatus() string
+	Layout() Layout
 }
 
 type service struct{}
@@ -76,6 +77,26 @@ func (s *service) TagStatus() string {
 	}
 
 	return string(b)
+}
+
+func (s *service) Layout() Layout {
+	cmd := exec.Command("herbstclient", "list_monitors")
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		logging.Logger.Fatalf("observing: could not create stdout pipe: %v\n", err)
+	}
+
+	if err = cmd.Start(); err != nil {
+		logging.Logger.Fatalf("observing: could not execute command: %v\n", err)
+	}
+
+	stdin := bufio.NewScanner(stdout)
+	var ss []string
+	for stdin.Scan() {
+		ss = append(ss, strings.Split(stdin.Text(), " ")[1])
+	}
+
+	return layout(strings.Join(ss, " "))
 }
 
 func generator(ctx context.Context) <-chan string {
