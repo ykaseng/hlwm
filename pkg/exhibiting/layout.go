@@ -1,6 +1,8 @@
 package exhibiting
 
-import "strings"
+import (
+	"strings"
+)
 
 type Layout int
 
@@ -22,10 +24,30 @@ var slM = map[string]Layout{
 	"split":     Split,
 }
 
+var lsM = map[Layout]string{
+	Default:   "Default",
+	Ultrawide: "Ultrawide",
+	Split:     "Split",
+}
+
 func (l Layout) String() string {
+	return lsM[l]
+}
+
+func (l Layout) ToMonitors() string {
 	return lmM[l]
 }
 
 func layout(s string) Layout {
 	return slM[strings.ToLower(s)]
+}
+
+func nextLayout(l Layout) Layout {
+	switch l {
+	case Default,
+		Ultrawide:
+		return l + 1
+	}
+
+	return Default
 }

@@ -24,30 +24,34 @@ import (
 	"github.com/ykaseng/hlwm/pkg/observing"
 )
 
-var set string
+var (
+	layout string
+	cycle  bool
+)
 
 // layoutCmd represents the layout command
 var layoutCmd = &cobra.Command{
 	Use:   "layout",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+	Short: "Layout outputs current hlwm layout to stdout",
+	Long: `Layout outputs current hlwm layout to stdout. Errors and 
+	notifications are piped through to notify-send using logrus.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		logging.NewLogger()
 
 		observer := observing.NewService()
 		exhibitor := exhibiting.NewService()
 
-		if len(set) > 1 {
-			exhibitor.SetLayout(set)
+		switch {
+		case len(layout) > 1:
+			exhibitor.SetLayout(layout)
 			return
+		case cycle:
+			cl := observer.Layout().String()
+			exhibitor.CycleLayout(cl)
+		default:
+			fmt.Println(observer.Layout())
 		}
 
-		fmt.Println(observer.Layout())
 	},
 }
 
@@ -55,7 +59,8 @@ func init() {
 	rootCmd.AddCommand(layoutCmd)
 
 	// Here you will define your flags and configuration settings.
-	layoutCmd.PersistentFlags().StringVarP(&set, "set", "s", "", "Set hlwm layout")
+	layoutCmd.PersistentFlags().StringVarP(&layout, "set", "s", "", "Set hlwm layout")
+	layoutCmd.PersistentFlags().BoolVarP(&cycle, "cycle", "c", false, "Cycle hlwm layout")
 
 	// Cobra supports Persistent Flags which will work for this command
 	// and all subcommands, e.g.:
