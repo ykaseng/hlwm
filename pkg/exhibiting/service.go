@@ -15,6 +15,7 @@ type Service interface {
 	HideWidget(string)
 	FlashWidget(context.Context, string, time.Duration) chan<- interface{}
 	SetLayout(string)
+	CycleLayout()
 }
 
 type service struct{}
@@ -54,10 +55,20 @@ func (s *service) FlashWidget(ctx context.Context, w string, d time.Duration) ch
 }
 
 func (s *service) SetLayout(ls string) {
-	cmd := exec.Command("herbstclient", strings.Fields(fmt.Sprintf("set_monitors %s", layout(ls)))...)
+	setLayout(layout(ls))
+}
+
+func (s *service) CycleLayout(ls string) {
+	setLayout(nextLayout(layout(ls)))
+}
+
+func setLayout(l Layout) {
+	cmd := exec.Command("herbstclient", strings.Fields(fmt.Sprintf("set_monitors %s", l.ToMonitors()))...)
 	if err := cmd.Run(); err != nil {
 		logging.Logger.Fatalf("exhibiting: could not set layout: %v\n", err)
 	}
+
+	logging.Logger.Infof("Layout has been set to: %s", l)
 }
 
 func showWidget(ctx context.Context, w string) error {
