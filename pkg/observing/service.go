@@ -58,7 +58,10 @@ func (s *service) TagStatus() string {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	ts := generator(ctx)
+	tags := tags()
+	ctx = context.WithValue(ctx, ctxTagCount, len(tags))
+
+	ts := generator(ctx, tags)
 
 	numProcessors := runtime.NumCPU()
 	processors := make([]<-chan result, numProcessors)
@@ -67,7 +70,7 @@ func (s *service) TagStatus() string {
 	}
 
 	sM := make(StatusMap)
-	for r := range take(ctx, fanIn(ctx, processors...), 9) {
+	for r := range take(ctx, fanIn(ctx, processors...), TagCount(ctx)) {
 		sM[r.Tag] = r.View
 	}
 
@@ -99,7 +102,7 @@ func (s *service) Layout() Layout {
 	return layout(strings.Join(ss, " "))
 }
 
-func generator(ctx context.Context) <-chan string {
+func tags() []string {
 	cmd := exec.Command("herbstclient", "tag_status")
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -115,7 +118,10 @@ func generator(ctx context.Context) <-chan string {
 		logging.Logger.Errorf("observing: could not read status: %v\n", err)
 	}
 
-	tags := strings.Split(strings.TrimSpace(stdin.Text()), "\t")
+	return strings.Split(strings.TrimSpace(stdin.Text()), "\t")
+}
+
+func generator(ctx context.Context, tags []string) <-chan string {
 	ts := make(chan string)
 	go func() {
 		defer close(ts)
